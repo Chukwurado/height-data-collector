@@ -1,26 +1,39 @@
 from flask import Flask, render_template, request
-from flask_sqlalchemy import SQLAlchemy
 from send_email import send_email
-from sqlalchemy.sql import func
+
+import psycopg2
+
+from dbconfig import DBURI
 
 app=Flask(__name__)
-#app.config['SQLALCHEMY_DATABASE_URI']='postgresql://postgres:admin@localhost/height_collector'
-app.config['SQLALCHEMY_DATABASE_URI']='postgres://pxqguovwejsvey:bc3e8a4b932ef107019c9a2c71c79f75a8d846074804e4552408c63c1ef24579@ec2-174-129-227-205.compute-1.amazonaws.com:5432/d3mh78av4gkk03?sslmode=require'
-db=SQLAlchemy(app)
 
-class Data(db.Model):
-    __tablename__="data"
-    id=db.Column(db.Integer, primary_key=True)
-    email_=db.Column(db.String(120), unique=True)
-    height_=db.Column(db.Integer)
+class Data():
+    def __init__(self):
+        self.con=psycopg2.connect(DBURI)
+        self.cur=self.con.cursor()
+        self.cur.execute("CREATE TABLE IF NOT EXISTS data (id SERIAL PRIMARY KEY, email TEXT, height INTEGER)")
+        self.con.commit()
+        # self.con.close()
 
-    def __init__(self, email_, height_):
-        self.email_=email_
-        self.height_=height_
+    def insert(self, email, height):
+        self.cur.execute("INSERT INTO data (email, height) VALUES (%s,%s)", (email, height))
+        self.con.commit()
+        #self.con.close()
 
+    def checkEmail(self, email):
+        self.cur.execute(f"SELECT * FROM data where email=lower('{email}')")
+        rows=self.cur.fetchall()
+        return len(rows) > 0
 
+    def heights(self):
+        self.cur.execute("SELECT height from data")
+        rows=self.cur.fetchall()
+        return rows
+
+data=Data()
 @app.route("/")
 def index():
+    Data()
     return render_template("index.html")
 
 @app.route("/success", methods=['POST'])
@@ -28,17 +41,15 @@ def success():
     if request.method=='POST':
         email=request.form['email_name']
         height=request.form['height_name']
+    
+    if data.checkEmail(email):
+        return render_template("index.html", text="Email has been used") 
 
-        if db.session.query(Data).filter(Data.email_==email).count() == 0:
-            data=Data(email, height)
-            db.session.add(data)
-            db.session.commit()
-            avg_height=db.session.query(func.avg(Data.height_)).scalar()
-            avg_height=round(avg_height, 1)
-            count=db.session.query(Data.height_).count()
-            send_email(email, height, avg_height, count)
-            return render_template("success.html")
-    return render_template("index.html", text="Email has been used")
+    data.insert(email, height)
+    all_hieghts=[x[0] for x in data.heights()]
+    avg_height=sum(all_hieghts) / len(all_hieghts)
+    send_email(email, height, avg_height, len(all_hieghts))
+    return render_template("success.html")
 
 if __name__ == '__main__':
     app.debug=True
