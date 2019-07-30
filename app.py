@@ -1,8 +1,7 @@
-from flask import Flask, render_template, request
-from send_email import send_email
-
 import psycopg2
+from flask import Flask, render_template, request
 
+from send_email import send_email
 from dbconfig import DBURI
 
 app=Flask(__name__)
@@ -13,12 +12,10 @@ class Data():
         self.cur=self.con.cursor()
         self.cur.execute("CREATE TABLE IF NOT EXISTS data (id SERIAL PRIMARY KEY, email TEXT, height INTEGER)")
         self.con.commit()
-        # self.con.close()
 
     def insert(self, email, height):
         self.cur.execute("INSERT INTO data (email, height) VALUES (%s,%s)", (email, height))
         self.con.commit()
-        #self.con.close()
 
     def checkEmail(self, email):
         self.cur.execute(f"SELECT * FROM data where email=lower('{email}')")
@@ -29,6 +26,9 @@ class Data():
         self.cur.execute("SELECT height from data")
         rows=self.cur.fetchall()
         return rows
+
+    def __del__(self):
+        self.con.close()
 
 data=Data()
 @app.route("/")
